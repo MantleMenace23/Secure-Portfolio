@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About Me</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-white min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="w-full flex justify-between items-center p-6">
+        <h1 class="text-2xl font-bold">My Portfolio</h1>
+        <button id="adminBtn"
+                class="bg-gradient-to-r from-blue-500 to-blue-700 px-4 py-2 rounded-lg shadow-lg hover:opacity-90 transition-all">
+            Admin
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <main id="aboutSection" class="flex-1 flex flex-col items-center justify-center">
+        <h2 class="text-4xl font-bold mb-4">About Me</h2>
+        <p class="max-w-xl text-center text-gray-300">
+            Welcome to my personal website! Here are my achievements and info...
+        </p>
+    </main>
+
+    <!-- Applications Section (Hidden until login) -->
+    <main id="appsSection" class="hidden flex-1 flex-col p-8">
+        <h2 class="text-3xl font-bold mb-6">Applications</h2>
+        <div id="appsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        <div id="appViewer" class="mt-6 hidden">
+            <iframe id="appFrame" class="w-full h-[600px] rounded-xl border border-gray-700"></iframe>
+        </div>
+    </main>
+
+    <!-- Login Overlay -->
+    <div id="loginOverlay" class="hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center">
+        <div class="bg-gray-900 p-6 rounded-lg shadow-lg max-w-sm w-full">
+            <h3 class="text-xl font-bold mb-4">Admin Access</h3>
+            <input id="adminCode" type="password" placeholder="Enter Code"
+                   class="w-full px-3 py-2 rounded bg-black border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
+            <button id="loginBtn"
+                    class="w-full bg-gradient-to-r from-blue-500 to-blue-700 py-2 rounded-lg hover:opacity-90">
+                Enter
+            </button>
+            <p id="loginError" class="hidden text-red-500 text-sm mt-2">Invalid code.</p>
+        </div>
+    </div>
+
+    <script>
+        const adminBtn = document.getElementById("adminBtn");
+        const loginOverlay = document.getElementById("loginOverlay");
+        const loginBtn = document.getElementById("loginBtn");
+        const adminCodeInput = document.getElementById("adminCode");
+        const loginError = document.getElementById("loginError");
+
+        const aboutSection = document.getElementById("aboutSection");
+        const appsSection = document.getElementById("appsSection");
+        const appsGrid = document.getElementById("appsGrid");
+        const appViewer = document.getElementById("appViewer");
+        const appFrame = document.getElementById("appFrame");
+
+        adminBtn.addEventListener("click", () => {
+            loginOverlay.classList.remove("hidden");
+        });
+
+        loginBtn.addEventListener("click", async () => {
+            const code = adminCodeInput.value;
+            const res = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code })
+            });
+
+            if (res.ok) {
+                loginOverlay.classList.add("hidden");
+                aboutSection.classList.add("hidden");
+                appsSection.classList.remove("hidden");
+                loadApps();
+            } else {
+                loginError.classList.remove("hidden");
+            }
+        });
+
+        async function loadApps() {
+            const res = await fetch("/api/files");
+            const files = await res.json();
+
+            appsGrid.innerHTML = "";
+            files.forEach(file => {
+                const name = file.replace(".html", "");
+                const card = document.createElement("div");
+                card.className = "bg-gray-800 p-4 rounded-lg shadow hover:shadow-lg transition";
+                card.innerHTML = `
+              <h4 class="text-lg font-semibold mb-2">${name}</h4>
+              <button class="utilizeBtn bg-gradient-to-r from-blue-500 to-blue-700 px-3 py-2 rounded shadow hover:opacity-90">
+                Utilize
+              </button>
+            `;
+                card.querySelector(".utilizeBtn").addEventListener("click", async () => {
+                    const fileRes = await fetch("/api/file/" + file);
+                    const content = await fileRes.text();
+                    appFrame.srcdoc = content;
+                    appViewer.classList.remove("hidden");
+                    window.scrollTo({ top: appViewer.offsetTop, behavior: "smooth" });
+                });
+                appsGrid.appendChild(card);
+            });
+        }
+    </script>
+</body>
+</html>
