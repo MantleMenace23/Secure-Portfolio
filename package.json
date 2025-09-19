@@ -1,7 +1,7 @@
 {
-  "name": "sneaky-portfolio",
+  "name": "The Coder",
   "version": "1.0.0",
-  "description": "My Acheivments.",
+  "description": "I CODE",
   "main": "server.js",
   "type": "module",
   "scripts": {

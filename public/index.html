@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>The Coder</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -28,10 +28,8 @@
         <h2 class="text-4xl font-bold mb-4">Good Luck...</h2>
     </main>
 
-    <!-- NOTE: The Applications UI (search, tiles, iframe) is intentionally NOT present in the static HTML.
-         It will be created dynamically in JS only after successful admin login and after fetching /api/files.
-         This keeps the static page minimal and avoids exposing application filenames or markup to passive scanners. -->
-    <!-- Login Overlay (still present in static HTML) -->
+    <!-- NOTE: No Applications DOM here in static HTML; will be created dynamically after login -->
+    <!-- Login Overlay -->
     <div id="loginOverlay" class="hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center">
         <div class="bg-gray-900 p-6 rounded-lg shadow-lg max-w-sm w-full">
             <h3 class="text-xl font-bold mb-4">Admin Access</h3>
@@ -46,32 +44,22 @@
     </div>
 
     <script>
-        /*
-          Behavior:
-          - Apps UI is built and inserted only after successful /api/login.
-          - After login, client fetches /api/files and builds:
-              1) Search input
-              2) Grid of tiles (one per .html file)
-              3) Iframe viewer (appFrame)
-          - Filenames and file content are never present in the page until after login.
-        */
-
+        // Elements from static HTML
         const adminBtn = document.getElementById("adminBtn");
         const loginOverlay = document.getElementById("loginOverlay");
         const loginBtn = document.getElementById("loginBtn");
         const adminCodeInput = document.getElementById("adminCode");
         const loginError = document.getElementById("loginError");
-
         const aboutSection = document.getElementById("aboutSection");
 
-        let files = []; // loaded after login
-        let appsContainer = null; // will hold the dynamically created Applications UI
+        // runtime state
+        let files = [];
+        let appsContainer = null;
 
         adminBtn.addEventListener("click", () => {
             loginOverlay.classList.remove("hidden");
         });
 
-        // Handle login
         loginBtn.addEventListener("click", async () => {
             loginError.classList.add("hidden");
             const code = adminCodeInput.value;
@@ -83,10 +71,9 @@
                 });
 
                 if (res.ok) {
-                    // Close overlay and reveal Applications UI (which we'll create now)
                     loginOverlay.classList.add("hidden");
                     aboutSection.classList.add("hidden");
-                    await initApplicationsUI(); // builds and inserts the apps UI
+                    await initApplicationsUI();
                 } else {
                     loginError.classList.remove("hidden");
                 }
@@ -98,20 +85,19 @@
             }
         });
 
-        /* Create applications UI dynamically and attach to document.body */
+        /* Build the Applications UI dynamically and attach to the DOM */
         async function initApplicationsUI() {
-            // Create container element
             appsContainer = document.createElement("main");
             appsContainer.id = "appsSectionDynamic";
             appsContainer.className = "flex-1 flex flex-col p-8 bg-black";
 
-            // Header
+            // Title
             const h = document.createElement("h2");
             h.className = "text-3xl font-bold mb-4";
             h.textContent = "Applications";
             appsContainer.appendChild(h);
 
-            // Search input (hidden until files load)
+            // Search input (hidden until files loaded)
             const search = document.createElement("input");
             search.id = "appsSearchDynamic";
             search.type = "text";
@@ -119,29 +105,28 @@
             search.className = "hidden mb-6 p-3 rounded-lg w-full bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500";
             appsContainer.appendChild(search);
 
-            // Grid container
+            // Grid
             const grid = document.createElement("div");
             grid.id = "appsGridDynamic";
             grid.className = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6";
             appsContainer.appendChild(grid);
 
-            // Viewer area
+            // Viewer (NOTE: this is a DIV target for inline injection, NOT an iframe)
             const viewerWrap = document.createElement("div");
             viewerWrap.id = "appViewerDynamic";
             viewerWrap.className = "mt-6 hidden";
-            const iframe = document.createElement("iframe");
-            iframe.id = "appFrameDynamic";
-            iframe.className = "w-full h-[600px] rounded-xl border border-gray-700";
-            iframe.sandbox = "allow-scripts allow-forms allow-same-origin";
-            viewerWrap.appendChild(iframe);
+            const viewerInner = document.createElement("div");
+            viewerInner.id = "appViewerInner";
+            // Keep a consistent look: container with white bg for apps so they appear clean
+            viewerInner.className = "w-full bg-white text-black rounded-xl p-0 overflow-auto";
+            viewerWrap.appendChild(viewerInner);
             appsContainer.appendChild(viewerWrap);
 
-            // Exit button to go back to About
+            // Exit button
             const exitBtn = document.createElement("button");
             exitBtn.className = "mt-6 px-3 py-2 rounded bg-gray-800 text-white w-32";
             exitBtn.textContent = "Exit";
             exitBtn.addEventListener("click", () => {
-                // remove the dynamic apps UI and restore About section
                 appsContainer.remove();
                 aboutSection.classList.remove("hidden");
                 appsContainer = null;
@@ -149,84 +134,153 @@
             });
             appsContainer.appendChild(exitBtn);
 
-            // append to body
+            // Append to body
             document.body.appendChild(appsContainer);
 
-            // fetch files (only now)
-            await loadFilesIntoGrid(grid, search, iframe, viewerWrap);
+            // Load files and populate
+            await loadFilesIntoGrid(grid, search, viewerInner, viewerWrap);
         }
 
-        /* Fetch list of files from server and populate grid */
-        async function loadFilesIntoGrid(grid, searchEl, iframeEl, viewerWrap) {
+        /* load /api/files and build tile list (searchable) */
+        async function loadFilesIntoGrid(grid, searchEl, viewerInner, viewerWrap) {
             grid.innerHTML = '<div class="col-span-full p-6 text-gray-400">Loading applications...</div>';
             try {
                 const res = await fetch("/api/files");
                 if (!res.ok) throw new Error("failed to list files");
                 files = await res.json();
-                // ensure files is an array
                 if (!Array.isArray(files)) files = [];
-
                 grid.innerHTML = "";
                 if (files.length === 0) {
                     grid.innerHTML = '<div class="col-span-full p-6 text-gray-400">No .html files found in repo root.</div>';
-                } else {
-                    // show search input
-                    searchEl.classList.remove("hidden");
-                    // create initial tiles
-                    files.forEach(f => createTileForFile(f, grid, iframeEl, viewerWrap));
-                    // wire search
-                    searchEl.addEventListener("input", () => {
-                        const q = searchEl.value.trim().toLowerCase();
-                        grid.innerHTML = "";
-                        files
-                            .filter(fn => fn.replace(/\.html?$/i, "").toLowerCase().includes(q))
-                            .forEach(fn => createTileForFile(fn, grid, iframeEl, viewerWrap));
-                    });
+                    return;
                 }
+                // show search
+                searchEl.classList.remove("hidden");
+                files.forEach(fn => createTileForFile(fn, grid, viewerInner, viewerWrap));
+                // wire search
+                searchEl.addEventListener("input", () => {
+                    const q = searchEl.value.trim().toLowerCase();
+                    grid.innerHTML = "";
+                    files
+                        .filter(fn => fn.replace(/\.html?$/i, "").toLowerCase().includes(q))
+                        .forEach(fn => createTileForFile(fn, grid, viewerInner, viewerWrap));
+                });
             } catch (err) {
                 console.error("Error loading files:", err);
                 grid.innerHTML = '<div class="col-span-full p-6 text-red-500">Failed to load applications.</div>';
             }
         }
 
-        /* Create a tile that fetches the file through the server when clicked */
-        function createTileForFile(filename, gridEl, iframeEl, viewerWrap) {
+        /* create a tile that loads the file inline (no iframe) */
+        function createTileForFile(filename, gridEl, viewerInner, viewerWrap) {
             const title = filename.replace(/\.html?$/i, "");
             const card = document.createElement("div");
             card.className = "bg-gray-800 p-4 rounded-lg shadow hover:shadow-lg transition";
             card.innerHTML = `
-        <h4 class="text-lg font-semibold mb-2">${escapeHtml(title)}</h4>
-        <p class="text-sm text-gray-400 mb-3">Utilize the application below</p>
-        <div class="flex justify-end">
-          <button class="utilBtn bg-gradient-to-r from-blue-500 to-blue-700 px-3 py-2 rounded shadow text-black">Utilize</button>
-        </div>
-      `;
+                    <h4 class="text-lg font-semibold mb-2">${escapeHtml(title)}</h4>
+                    <p class="text-sm text-gray-400 mb-3">Utilize the application below</p>
+                    <div class="flex justify-end">
+                      <button class="utilBtn bg-gradient-to-r from-blue-500 to-blue-700 px-3 py-2 rounded shadow text-black">Utilize</button>
+                    </div>
+                `;
             const btn = card.querySelector(".utilBtn");
             btn.addEventListener("click", async () => {
                 try {
-                    // fetch proxied content from server
+                    // fetch app HTML from server endpoint (serves from public/UBG4ALL)
                     const r = await fetch("/api/file/" + encodeURIComponent(filename));
                     if (!r.ok) throw new Error("failed to load file");
                     const text = await r.text();
-                    // load into iframe via srcdoc so URL doesn't change
-                    iframeEl.srcdoc = text;
+                    // inject inline while preserving relative resource resolution:
+                    await loadAppInlineFromHtml(text, viewerInner);
                     viewerWrap.classList.remove("hidden");
-                    // scroll viewer into view
                     viewerWrap.scrollIntoView({ behavior: "smooth", block: "start" });
                 } catch (err) {
                     console.error("Failed to load app:", err);
                     alert("Failed to load application.");
                 }
             });
-
             gridEl.appendChild(card);
         }
 
-        /* small helper */
+        /* Inject fetched HTML into mountEl and execute scripts.
+           This sets a <base> so relative URLs resolve to /UBG4ALL/ on the server. */
+        async function loadAppInlineFromHtml(htmlString, mountEl) {
+            try {
+                // compute base href relative to UBG folder on server
+                const baseHref = '/UBG4ALL/';
+                // parse HTML
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlString, 'text/html');
+
+                // inject base tag
+                const baseTag = doc.createElement('base');
+                baseTag.setAttribute('href', baseHref);
+                if (doc.head) {
+                    doc.head.insertBefore(baseTag, doc.head.firstChild);
+                } else {
+                    const head = doc.createElement('head');
+                    head.appendChild(baseTag);
+                    doc.documentElement.insertBefore(head, doc.body);
+                }
+
+                // gather nodes to inject (head elements except scripts, then body children)
+                const frag = document.createDocumentFragment();
+
+                // clone head children (except scripts)
+                if (doc.head) {
+                    Array.from(doc.head.childNodes).forEach(node => {
+                        if (node.nodeName && node.nodeName.toLowerCase() === 'script') return;
+                        frag.appendChild(node.cloneNode(true));
+                    });
+                }
+
+                // clone body children
+                Array.from(doc.body.childNodes).forEach(node => {
+                    frag.appendChild(node.cloneNode(true));
+                });
+
+                // attach to mount (wipe previous)
+                mountEl.innerHTML = '';
+                mountEl.appendChild(frag);
+
+                // execute scripts in order
+                const scripts = Array.from(doc.querySelectorAll('script'));
+                for (const s of scripts) {
+                    const newScript = document.createElement('script');
+                    // copy attributes
+                    for (const attr of s.attributes) newScript.setAttribute(attr.name, attr.value);
+                    if (s.src) {
+                        // resolve relative src against baseHref
+                        let src = s.getAttribute('src');
+                        if (!src.startsWith('/') && !/^https?:\/\//i.test(src)) {
+                            src = baseHref + src;
+                        }
+                        newScript.src = src;
+                        // append to head and wait for load to preserve order
+                        await new Promise((resolve) => {
+                            newScript.onload = () => resolve();
+                            newScript.onerror = () => {
+                                console.warn('Failed to load script', src);
+                                resolve();
+                            };
+                            document.head.appendChild(newScript);
+                        });
+                    } else {
+                        // inline script: create and append (executes)
+                        newScript.textContent = s.textContent;
+                        document.head.appendChild(newScript);
+                    }
+                }
+                return true;
+            } catch (err) {
+                console.error('loadAppInlineFromHtml error:', err);
+                return false;
+            }
+        }
+
+        /* escape helper */
         function escapeHtml(s) {
-            return String(s).replace(/[&<>"']/g, c => ({
-                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-            }[c]));
+            return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
     </script>
 </body>

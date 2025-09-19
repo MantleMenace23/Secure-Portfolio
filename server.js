@@ -1,66 +1,93 @@
-// ================== CONFIG ==================
-import 'dotenv/config'; // Load .env variables
+// server.js
+// ESM module: requires "type": "module" in package.json
 
-const ADMIN_CODE = process.env.ADMIN_CODE || "mySecretCode"; // Admin login code
-const GITHUB_REPO = process.env.GITHUB_REPO || "your-username/your-repo";
-const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "main";
-// ============================================
+import 'dotenv/config';
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { readdir, readFile, stat } from 'fs/promises';
 
-import express from "express";
-import fetch from "node-fetch";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const app = express();
+//
+// =============== CONFIG (top) ===============
+// Edit these values or set them in your Render env variables (.env)
+// ADMIN_CODE: code required to open the admin UI
+// UBG_DIR: directory (relative to project root) where your .html apps live
+// =============================================
+const ADMIN_CODE = process.env.ADMIN_CODE || 'opensesame';
+const UBG_DIR = process.env.UBG_DIR || 'public/UBG4ALL'; // relative path
 const PORT = process.env.PORT || 3000;
+// =============================================
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+// serve static public folder normally
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Admin auth endpoint
-app.post("/api/login", (req, res) => {
-    const { code } = req.body;
-    if (code === ADMIN_CODE) {
-        return res.json({ success: true });
-    }
-    return res.status(401).json({ success: false });
+/**
+ * Helper: ensure resolved path stays inside the allowed UBG_DIR
+ */
+function safeResolveFilename(filename) {
+    // only allow simple filenames (no slashes)
+    // strip any path components for safety
+    const base = path.basename(filename);
+    // only allow .html extension
+    if (!/\.html?$/i.test(base)) return null;
+    const resolved = path.resolve(path.join(__dirname, UBG_DIR, base));
+    const allowedRoot = path.resolve(path.join(__dirname, UBG_DIR));
+    if (!resolved.startsWith(allowedRoot)) return null;
+    return { resolved, base };
+}
+
+// POST /api/login  -> simply verifies admin code (same behavior you had)
+app.post('/api/login', (req, res) => {
+    const { code } = req.body || {};
+    if (!code) return res.status(400).json({ success: false, message: 'missing code' });
+    if (code === ADMIN_CODE) return res.json({ success: true });
+    return res.status(401).json({ success: false, message: 'invalid code' });
 });
 
-// List repo HTML files
-app.get("/api/files", async (req, res) => {
+// GET /api/files -> list .html files in UBG_DIR root
+app.get('/api/files', async (req, res) => {
     try {
-        const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        const htmlFiles = data
-            .filter((file) => file.name.endsWith(".html"))
-            .map((file) => file.name);
-
+        const folder = path.resolve(path.join(__dirname, UBG_DIR));
+        // ensure folder exists
+        const folderStat = await stat(folder).catch(() => null);
+        if (!folderStat || !folderStat.isDirectory()) {
+            return res.json([]); // return empty if folder missing
+        }
+        const items = await readdir(folder);
+        // filter .html files only
+        const htmlFiles = items.filter(n => /\.html?$/i.test(n));
         res.json(htmlFiles);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to fetch repo files." });
+        console.error('Error listing UBG files:', err);
+        res.status(500).json({ error: 'failed to list files' });
     }
 });
 
-// Proxy GitHub raw HTML
-app.get("/api/file/:name", async (req, res) => {
-    const { name } = req.params;
+// GET /api/file/:name -> read file from UBG_DIR and return as HTML
+app.get('/api/file/:name', async (req, res) => {
     try {
-        const url = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/${name}`;
-        const response = await fetch(url);
-        const content = await response.text();
+        const { name } = req.params;
+        const safe = safeResolveFilename(name);
+        if (!safe) return res.status(400).send('invalid filename');
+        const content = await readFile(safe.resolved, { encoding: 'utf8' });
+        res.set('Content-Type', 'text/html; charset=utf-8');
         res.send(content);
     } catch (err) {
-        console.error(err);
-        res.status(500).send("Error loading file.");
+        console.error('Error reading file:', err);
+        res.status(500).send('failed to load file');
     }
+});
+
+// fallback to index.html for SPA routing
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
-    console.log(`? Server running at http://localhost:${PORT}`);
+    console.log(`Server listening on http://localhost:${PORT} (UBG_DIR=${UBG_DIR})`);
 });
