@@ -1,39 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>About Me</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>The Coder</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-black text-white min-h-screen flex flex-col">
+
     <!-- Header -->
     <header class="w-full flex justify-between items-center p-6">
-        <h1 class="text-2xl font-bold">My Portfolio</h1>
+        <h1 class="text-2xl font-bold">The Coder</h1>
         <button id="adminBtn"
                 class="bg-gradient-to-r from-blue-500 to-blue-700 px-4 py-2 rounded-lg shadow-lg hover:opacity-90 transition-all">
             Admin
         </button>
     </header>
 
-    <!-- Main Content -->
+    <!-- Main About Section -->
     <main id="aboutSection" class="flex-1 flex flex-col items-center justify-center">
-        <h2 class="text-4xl font-bold mb-4">About Me</h2>
+        <h2 class="text-4xl font-bold mb-4">Who Am I?</h2>
         <p class="max-w-xl text-center text-gray-300">
-            Welcome to my personal website! Here are my achievements and info...
+            I am the coder. I make cool sites. This one has a lot of easter eggs. You might know me by schooladminwebtesting.xyz, anonychat.xyz, and multiple other sites.
+            I can assure this is not a game site. Somewhere on here, you can find who I truly am.
         </p>
+
+        <h2 class="text-4xl font-bold mb-4">Good Luck...</h2>
     </main>
 
-    <!-- Applications Section (Hidden until login) -->
-    <main id="appsSection" class="hidden flex-1 flex-col p-8">
-        <h2 class="text-3xl font-bold mb-6">Applications</h2>
-        <div id="appsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
-        <div id="appViewer" class="mt-6 hidden">
-            <iframe id="appFrame" class="w-full h-[600px] rounded-xl border border-gray-700"></iframe>
-        </div>
-    </main>
-
-    <!-- Login Overlay -->
+    <!-- NOTE: The Applications UI (search, tiles, iframe) is intentionally NOT present in the static HTML.
+         It will be created dynamically in JS only after successful admin login and after fetching /api/files.
+         This keeps the static page minimal and avoids exposing application filenames or markup to passive scanners. -->
+    <!-- Login Overlay (still present in static HTML) -->
     <div id="loginOverlay" class="hidden fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center">
         <div class="bg-gray-900 p-6 rounded-lg shadow-lg max-w-sm w-full">
             <h3 class="text-xl font-bold mb-4">Admin Access</h3>
@@ -48,6 +46,16 @@
     </div>
 
     <script>
+        /*
+          Behavior:
+          - Apps UI is built and inserted only after successful /api/login.
+          - After login, client fetches /api/files and builds:
+              1) Search input
+              2) Grid of tiles (one per .html file)
+              3) Iframe viewer (appFrame)
+          - Filenames and file content are never present in the page until after login.
+        */
+
         const adminBtn = document.getElementById("adminBtn");
         const loginOverlay = document.getElementById("loginOverlay");
         const loginBtn = document.getElementById("loginBtn");
@@ -55,57 +63,170 @@
         const loginError = document.getElementById("loginError");
 
         const aboutSection = document.getElementById("aboutSection");
-        const appsSection = document.getElementById("appsSection");
-        const appsGrid = document.getElementById("appsGrid");
-        const appViewer = document.getElementById("appViewer");
-        const appFrame = document.getElementById("appFrame");
+
+        let files = []; // loaded after login
+        let appsContainer = null; // will hold the dynamically created Applications UI
 
         adminBtn.addEventListener("click", () => {
             loginOverlay.classList.remove("hidden");
         });
 
+        // Handle login
         loginBtn.addEventListener("click", async () => {
+            loginError.classList.add("hidden");
             const code = adminCodeInput.value;
-            const res = await fetch("/api/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ code })
-            });
+            try {
+                const res = await fetch("/api/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ code })
+                });
 
-            if (res.ok) {
-                loginOverlay.classList.add("hidden");
-                aboutSection.classList.add("hidden");
-                appsSection.classList.remove("hidden");
-                loadApps();
-            } else {
+                if (res.ok) {
+                    // Close overlay and reveal Applications UI (which we'll create now)
+                    loginOverlay.classList.add("hidden");
+                    aboutSection.classList.add("hidden");
+                    await initApplicationsUI(); // builds and inserts the apps UI
+                } else {
+                    loginError.classList.remove("hidden");
+                }
+            } catch (err) {
+                console.error("Login error:", err);
                 loginError.classList.remove("hidden");
+            } finally {
+                adminCodeInput.value = "";
             }
         });
 
-        async function loadApps() {
-            const res = await fetch("/api/files");
-            const files = await res.json();
+        /* Create applications UI dynamically and attach to document.body */
+        async function initApplicationsUI() {
+            // Create container element
+            appsContainer = document.createElement("main");
+            appsContainer.id = "appsSectionDynamic";
+            appsContainer.className = "flex-1 flex flex-col p-8 bg-black";
 
-            appsGrid.innerHTML = "";
-            files.forEach(file => {
-                const name = file.replace(".html", "");
-                const card = document.createElement("div");
-                card.className = "bg-gray-800 p-4 rounded-lg shadow hover:shadow-lg transition";
-                card.innerHTML = `
-              <h4 class="text-lg font-semibold mb-2">${name}</h4>
-              <button class="utilizeBtn bg-gradient-to-r from-blue-500 to-blue-700 px-3 py-2 rounded shadow hover:opacity-90">
-                Utilize
-              </button>
-            `;
-                card.querySelector(".utilizeBtn").addEventListener("click", async () => {
-                    const fileRes = await fetch("/api/file/" + file);
-                    const content = await fileRes.text();
-                    appFrame.srcdoc = content;
-                    appViewer.classList.remove("hidden");
-                    window.scrollTo({ top: appViewer.offsetTop, behavior: "smooth" });
-                });
-                appsGrid.appendChild(card);
+            // Header
+            const h = document.createElement("h2");
+            h.className = "text-3xl font-bold mb-4";
+            h.textContent = "Applications";
+            appsContainer.appendChild(h);
+
+            // Search input (hidden until files load)
+            const search = document.createElement("input");
+            search.id = "appsSearchDynamic";
+            search.type = "text";
+            search.placeholder = "Search applications...";
+            search.className = "hidden mb-6 p-3 rounded-lg w-full bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500";
+            appsContainer.appendChild(search);
+
+            // Grid container
+            const grid = document.createElement("div");
+            grid.id = "appsGridDynamic";
+            grid.className = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6";
+            appsContainer.appendChild(grid);
+
+            // Viewer area
+            const viewerWrap = document.createElement("div");
+            viewerWrap.id = "appViewerDynamic";
+            viewerWrap.className = "mt-6 hidden";
+            const iframe = document.createElement("iframe");
+            iframe.id = "appFrameDynamic";
+            iframe.className = "w-full h-[600px] rounded-xl border border-gray-700";
+            iframe.sandbox = "allow-scripts allow-forms allow-same-origin";
+            viewerWrap.appendChild(iframe);
+            appsContainer.appendChild(viewerWrap);
+
+            // Exit button to go back to About
+            const exitBtn = document.createElement("button");
+            exitBtn.className = "mt-6 px-3 py-2 rounded bg-gray-800 text-white w-32";
+            exitBtn.textContent = "Exit";
+            exitBtn.addEventListener("click", () => {
+                // remove the dynamic apps UI and restore About section
+                appsContainer.remove();
+                aboutSection.classList.remove("hidden");
+                appsContainer = null;
+                files = [];
             });
+            appsContainer.appendChild(exitBtn);
+
+            // append to body
+            document.body.appendChild(appsContainer);
+
+            // fetch files (only now)
+            await loadFilesIntoGrid(grid, search, iframe, viewerWrap);
+        }
+
+        /* Fetch list of files from server and populate grid */
+        async function loadFilesIntoGrid(grid, searchEl, iframeEl, viewerWrap) {
+            grid.innerHTML = '<div class="col-span-full p-6 text-gray-400">Loading applications...</div>';
+            try {
+                const res = await fetch("/api/files");
+                if (!res.ok) throw new Error("failed to list files");
+                files = await res.json();
+                // ensure files is an array
+                if (!Array.isArray(files)) files = [];
+
+                grid.innerHTML = "";
+                if (files.length === 0) {
+                    grid.innerHTML = '<div class="col-span-full p-6 text-gray-400">No .html files found in repo root.</div>';
+                } else {
+                    // show search input
+                    searchEl.classList.remove("hidden");
+                    // create initial tiles
+                    files.forEach(f => createTileForFile(f, grid, iframeEl, viewerWrap));
+                    // wire search
+                    searchEl.addEventListener("input", () => {
+                        const q = searchEl.value.trim().toLowerCase();
+                        grid.innerHTML = "";
+                        files
+                            .filter(fn => fn.replace(/\.html?$/i, "").toLowerCase().includes(q))
+                            .forEach(fn => createTileForFile(fn, grid, iframeEl, viewerWrap));
+                    });
+                }
+            } catch (err) {
+                console.error("Error loading files:", err);
+                grid.innerHTML = '<div class="col-span-full p-6 text-red-500">Failed to load applications.</div>';
+            }
+        }
+
+        /* Create a tile that fetches the file through the server when clicked */
+        function createTileForFile(filename, gridEl, iframeEl, viewerWrap) {
+            const title = filename.replace(/\.html?$/i, "");
+            const card = document.createElement("div");
+            card.className = "bg-gray-800 p-4 rounded-lg shadow hover:shadow-lg transition";
+            card.innerHTML = `
+        <h4 class="text-lg font-semibold mb-2">${escapeHtml(title)}</h4>
+        <p class="text-sm text-gray-400 mb-3">Utilize the application below</p>
+        <div class="flex justify-end">
+          <button class="utilBtn bg-gradient-to-r from-blue-500 to-blue-700 px-3 py-2 rounded shadow text-black">Utilize</button>
+        </div>
+      `;
+            const btn = card.querySelector(".utilBtn");
+            btn.addEventListener("click", async () => {
+                try {
+                    // fetch proxied content from server
+                    const r = await fetch("/api/file/" + encodeURIComponent(filename));
+                    if (!r.ok) throw new Error("failed to load file");
+                    const text = await r.text();
+                    // load into iframe via srcdoc so URL doesn't change
+                    iframeEl.srcdoc = text;
+                    viewerWrap.classList.remove("hidden");
+                    // scroll viewer into view
+                    viewerWrap.scrollIntoView({ behavior: "smooth", block: "start" });
+                } catch (err) {
+                    console.error("Failed to load app:", err);
+                    alert("Failed to load application.");
+                }
+            });
+
+            gridEl.appendChild(card);
+        }
+
+        /* small helper */
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
         }
     </script>
 </body>
